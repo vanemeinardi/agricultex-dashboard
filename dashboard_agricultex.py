@@ -155,9 +155,11 @@ fig.add_trace(go.Scatter(
 
 fig.update_layout(
     title=dict(text=f'Evolución de peso — Banda {int(banda_sel)}', font=dict(size=18, color='white')),
-    xaxis=dict(title='Semana de vida', tickmode='linear', dtick=1,
-               gridcolor='#333333', color='white', titlefont=dict(color='white')),
-    yaxis=dict(title='Peso (kg)', gridcolor='#333333', color='white', titlefont=dict(color='white')),
+    xaxis=dict(title=dict(text='Semana de vida', font=dict(color='white')),
+           tickmode='linear', dtick=1,
+           gridcolor='#333333', color='white'),
+yaxis=dict(title=dict(text='Peso (kg)', font=dict(color='white')),
+           gridcolor='#333333', color='white'),
     plot_bgcolor='#1A1A1A', paper_bgcolor='#1A1A1A',
     legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
                 font=dict(color='white')),
