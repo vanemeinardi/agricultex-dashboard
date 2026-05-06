@@ -14,7 +14,6 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
     html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     .stApp { background-color: #1A1A1A; color: white; }
-    section[data-testid="stSidebar"] { background-color: #111111; }
     .metric-card {
         background: #2A2A2A; border-radius: 12px; padding: 16px 20px;
         box-shadow: 0 1px 4px rgba(0,0,0,0.4); border-left: 4px solid #2E7D32;
@@ -26,12 +25,20 @@ st.markdown("""
     h1, h2, h3 { color: #FFFFFF !important; }
     p, li, label { color: #CCCCCC !important; }
     div[data-testid="stSelectbox"] label { color: #CCCCCC !important; }
-    .stDataFrame { background-color: transparent !important; }
-    .stDataFrame table { background-color: #2A2A2A !important; }
-    .stDataFrame th { background-color: #1F6B3A !important; color: white !important; border: none !important; }
-    .stDataFrame td { background-color: #2A2A2A !important; color: #CCCCCC !important; border-color: #333333 !important; }
-    .stDataFrame tr:hover td { background-color: #333333 !important; }
-    [data-testid="stDataFrame"] { background-color: transparent !important; border: none !important; box-shadow: none !important; }
+    .tabla-dark { width: 100%; border-collapse: collapse; background-color: transparent; }
+    .tabla-dark th {
+        background-color: #1F6B3A; color: white; padding: 10px 14px;
+        text-align: left; font-size: 13px; font-weight: 600; border-bottom: 2px solid #2E7D32;
+    }
+    .tabla-dark td {
+        padding: 9px 14px; font-size: 13px; color: #CCCCCC;
+        border-bottom: 1px solid #2D2D2D;
+    }
+    .tabla-dark tr:nth-child(even) td { background-color: #222222; }
+    .tabla-dark tr:hover td { background-color: #2E2E2E; }
+    .badge-dentro { background: #1B5E20; color: #A5D6A7; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .badge-encima { background: #0D47A1; color: #90CAF9; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .badge-debajo { background: #E65100; color: #FFE0B2; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -62,6 +69,16 @@ def cargar_datos():
         return df, None
     except Exception as e:
         return None, str(e)
+
+def badge_estado(estado):
+    e = str(estado)
+    if 'Dentro' in e:
+        return f'<span class="badge-dentro">✅ Dentro</span>'
+    elif 'encima' in e.lower():
+        return f'<span class="badge-encima">⬆️ Por encima</span>'
+    elif 'debajo' in e.lower():
+        return f'<span class="badge-debajo">⚠️ Por debajo</span>'
+    return e
 
 st.markdown("# 🐷 Agricultex — Dashboard Recría")
 st.markdown("Evolución de peso por banda con intervalo de confianza al 95%")
@@ -133,26 +150,20 @@ fig = go.Figure()
 fig.add_trace(go.Scatter(
     x=semanas_banda + semanas_banda[::-1],
     y=ic_sups + ic_infs[::-1],
-    fill='toself',
-    fillcolor='rgba(33,150,243,0.15)',
-    line=dict(color='rgba(255,255,255,0)'),
-    name='IC 95%',
-    hoverinfo='skip',
+    fill='toself', fillcolor='rgba(33,150,243,0.15)',
+    line=dict(color='rgba(255,255,255,0)'), name='IC 95%', hoverinfo='skip',
 ))
 
 semanas_std = [s for s in range(3, 12) if s in STANDARD]
 fig.add_trace(go.Scatter(
     x=semanas_std, y=[STANDARD[s] for s in semanas_std],
     mode='lines+markers', name='Estándar',
-    line=dict(color='#EF5350', width=2, dash='dash'),
-    marker=dict(size=7),
+    line=dict(color='#EF5350', width=2, dash='dash'), marker=dict(size=7),
 ))
 
 fig.add_trace(go.Scatter(
-    x=semanas_banda, y=medias,
-    mode='lines+markers', name='Media real',
-    line=dict(color='#42A5F5', width=3),
-    marker=dict(size=9),
+    x=semanas_banda, y=medias, mode='lines+markers', name='Media real',
+    line=dict(color='#42A5F5', width=3), marker=dict(size=9),
     text=[f"Sem {int(s)}<br>Media: {m:.2f} kg<br>IC: [{il:.2f}, {su:.2f}]"
           for s, m, il, su in zip(semanas_banda, medias, ic_infs, ic_sups)],
     hovertemplate='%{text}<extra></extra>',
@@ -171,11 +182,34 @@ fig.update_layout(
 )
 st.plotly_chart(fig, use_container_width=True)
 
+# Tabla HTML
 st.markdown("### 📋 Tabla estadística por semana")
-cols_mostrar = ['Semana', 'N (lechones)', 'Media (kg)', 'Desvío S',
-                'Error Est. (SE)', 'IC 95% inf', 'IC 95% sup', 'Estado vs Estándar']
-cols_disp = [c for c in cols_mostrar if c in df_banda.columns]
-st.dataframe(df_banda[cols_disp].reset_index(drop=True), use_container_width=True, hide_index=True)
+
+cols = ['Semana', 'N (lechones)', 'Media (kg)', 'Desvío S',
+        'Error Est. (SE)', 'IC 95% inf', 'IC 95% sup', 'Estado vs Estándar']
+cols_disp = [c for c in cols if c in df_banda.columns]
+
+html = '<table class="tabla-dark"><thead><tr>'
+for c in cols_disp:
+    html += f'<th>{c}</th>'
+html += '</tr></thead><tbody>'
+
+for _, row in df_banda[cols_disp].iterrows():
+    html += '<tr>'
+    for c in cols_disp:
+        val = row[c]
+        if c == 'Estado vs Estándar':
+            html += f'<td>{badge_estado(val)}</td>'
+        elif c == 'Semana' or c == 'N (lechones)':
+            html += f'<td>{int(val) if pd.notna(val) else ""}</td>'
+        else:
+            html += f'<td>{val:.4f}</td>' if pd.notna(val) else '<td></td>'
+    html += '</tr>'
+html += '</tbody></table>'
+
+st.markdown(html, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 if 'Estado vs Estándar' in df_banda.columns:
     estados = df_banda['Estado vs Estándar'].tolist()
