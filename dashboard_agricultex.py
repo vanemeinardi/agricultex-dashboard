@@ -25,8 +25,13 @@ st.markdown("""
     .metric-sub { font-size: 12px; color: #888888; margin-top: 2px; }
     h1, h2, h3 { color: #FFFFFF !important; }
     p, li, label { color: #CCCCCC !important; }
-    .stDataFrame { background-color: #2A2A2A; }
     div[data-testid="stSelectbox"] label { color: #CCCCCC !important; }
+    .stDataFrame { background-color: transparent !important; }
+    .stDataFrame table { background-color: #2A2A2A !important; }
+    .stDataFrame th { background-color: #1F6B3A !important; color: white !important; border: none !important; }
+    .stDataFrame td { background-color: #2A2A2A !important; color: #CCCCCC !important; border-color: #333333 !important; }
+    .stDataFrame tr:hover td { background-color: #333333 !important; }
+    [data-testid="stDataFrame"] { background-color: transparent !important; border: none !important; box-shadow: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,7 +77,7 @@ if df is None or df.empty:
     st.warning("No hay datos disponibles.")
     st.stop()
 
-st.caption(f"✅ {len(df)} registros cargados · Se actualiza cada 5 minutos")
+st.caption(f"✅ {len(df)} registros cargados · Datos sincronizados automáticamente")
 
 bandas = sorted(df['Banda'].dropna().unique().astype(int))
 banda_sel = st.selectbox("🏷️ Seleccioná la Banda", bandas)
@@ -156,10 +161,9 @@ fig.add_trace(go.Scatter(
 fig.update_layout(
     title=dict(text=f'Evolución de peso — Banda {int(banda_sel)}', font=dict(size=18, color='white')),
     xaxis=dict(title=dict(text='Semana de vida', font=dict(color='white')),
-           tickmode='linear', dtick=1,
-           gridcolor='#333333', color='white'),
-yaxis=dict(title=dict(text='Peso (kg)', font=dict(color='white')),
-           gridcolor='#333333', color='white'),
+               tickmode='linear', dtick=1, gridcolor='#333333', color='white'),
+    yaxis=dict(title=dict(text='Peso (kg)', font=dict(color='white')),
+               gridcolor='#333333', color='white'),
     plot_bgcolor='#1A1A1A', paper_bgcolor='#1A1A1A',
     legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
                 font=dict(color='white')),
