@@ -2,354 +2,185 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from scipy import stats
-import gspread
-from google.oauth2.service_account import Credentials
 
-# ── Configuración de página ──────────────────────────────────────────────────
 st.set_page_config(
     page_title="Agricultex — Dashboard Recría",
     page_icon="🐷",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# ── CSS personalizado ─────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=DM+Mono&display=swap');
-
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
     html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
-
-    .main { background-color: #F5F7F2; }
-
+    .stApp { background-color: #1A1A1A; color: white; }
+    section[data-testid="stSidebar"] { background-color: #111111; }
     .metric-card {
-        background: white;
-        border-radius: 12px;
-        padding: 16px 20px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-        border-left: 4px solid #2E7D32;
+        background: #2A2A2A; border-radius: 12px; padding: 16px 20px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.4); border-left: 4px solid #2E7D32;
+        margin-bottom: 8px;
     }
-    .metric-title { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.05em; }
-    .metric-value { font-size: 28px; font-weight: 700; color: #1A1A1A; }
-    .metric-sub { font-size: 12px; color: #888; margin-top: 2px; }
-
-    .dentro  { background: #E8F5E9; color: #2E7D32; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-    .fuera   { background: #FFEBEE; color: #C62828; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-    .alerta  { background: #FFF8E1; color: #F57F17; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-
-    h1 { color: #1A1A1A !important; }
-    .stSelectbox label { font-weight: 600; }
+    .metric-title { font-size: 12px; color: #AAAAAA; text-transform: uppercase; letter-spacing: 0.05em; }
+    .metric-value { font-size: 26px; font-weight: 700; color: #FFFFFF; }
+    .metric-sub { font-size: 12px; color: #888888; margin-top: 2px; }
+    h1, h2, h3 { color: #FFFFFF !important; }
+    p, li, label { color: #CCCCCC !important; }
+    .stDataFrame { background-color: #2A2A2A; }
+    div[data-testid="stSelectbox"] label { color: #CCCCCC !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Valores estándar por semana ───────────────────────────────────────────────
-STANDARD = {
-    3:  6.3,
-    4:  8.3,
-    5:  10.6,
-    6:  13.3,
-    7:  16.6,
-    8:  20.6,
-    9:  25.1,
-    10: 30.0,
-    11: 35.4,
-    12: 40.8,
-    13: 46.5,
-    14: 52.0,
-    15: 57.8,
-    16: 63.5,
-}
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSgxJiumgT9__PpntQZvNU-mEa7soEDOy0oQ_4vJZOjfKcBESdGlevazx5XtutLLEhVaJj74BLoRILT/pub?gid=0&single=true&output=csv"
 
-# ── Carga de datos ────────────────────────────────────────────────────────────
-@st.cache_data(ttl=300)
-def cargar_datos_local(archivo):
-    df = pd.read_excel(archivo, sheet_name='Recria')
-    return df
+STANDARD = {3:6.3, 4:8.3, 5:10.6, 6:13.3, 7:16.6, 8:20.6, 9:25.1, 10:30.0, 11:35.4}
 
 @st.cache_data(ttl=300)
-def cargar_desde_gsheets(url_o_id, json_creds):
-    """Carga datos desde Google Sheets usando service account."""
-    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    creds = Credentials.from_service_account_info(json_creds, scopes=scope)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_url(url_o_id) if url_o_id.startswith('http') else gc.open_by_key(url_o_id)
-    ws = sh.worksheet('Recria')
-    data = ws.get_all_records()
-    return pd.DataFrame(data)
+def cargar_datos():
+    try:
+        df_raw = pd.read_csv(SHEET_URL, header=None)
+        header_row = None
+        for i, row in df_raw.iterrows():
+            if str(row[0]).strip() == 'Banda':
+                header_row = i
+                break
+        if header_row is None:
+            return None, "No se encontró la tabla"
+        df = df_raw.iloc[header_row+1:].copy()
+        df.columns = df_raw.iloc[header_row].values
+        df = df.reset_index(drop=True)
+        df = df[df['Banda'].notna() & (df['Banda'] != '')]
+        for col in ['Banda', 'Semana', 'N (lechones)', 'Media (kg)', 'Desvío S',
+                    'Error Est. (SE)', 'IC 95% inf', 'IC 95% sup']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        df = df.dropna(subset=['Banda', 'Semana', 'Media (kg)'])
+        return df, None
+    except Exception as e:
+        return None, str(e)
 
-def calcular_ic(datos, confianza=0.95):
-    """Intervalo de confianza con t de Student (muestras pequeñas)."""
-    n = len(datos)
-    if n < 2:
-        return None, None
-    media = np.mean(datos)
-    se = stats.sem(datos)
-    t_val = stats.t.ppf((1 + confianza) / 2, df=n - 1)
-    margen = t_val * se
-    return media - margen, media + margen
+st.markdown("# 🐷 Agricultex — Dashboard Recría")
+st.markdown("Evolución de peso por banda con intervalo de confianza al 95%")
+st.markdown("---")
 
-def estado_lechon(peso, semana, ic_inf, ic_sup, std_val):
-    """Determina si el lechón está dentro/fuera de la banda de confianza."""
-    if ic_inf is None:
-        return "Sin datos"
-    if ic_inf <= peso <= ic_sup:
-        return "✅ Dentro"
-    elif peso < std_val * 0.85:
-        return "🔴 Muy por debajo"
-    elif peso < ic_inf:
-        return "⚠️ Por debajo"
-    else:
-        return "⬆️ Por encima"
+df, error = cargar_datos()
 
-# ── SIDEBAR ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.image("https://i.imgur.com/placeholder.png", width=160) if False else None
-    st.markdown("## 🐷 Agricultex")
-    st.markdown("---")
+if error:
+    st.error(f"Error cargando datos: {error}")
+    st.stop()
 
-    fuente = st.radio("Fuente de datos", ["📁 Archivo local", "☁️ Google Sheets"])
+if df is None or df.empty:
+    st.warning("No hay datos disponibles.")
+    st.stop()
 
-    df = None
+st.caption(f"✅ {len(df)} registros cargados · Se actualiza cada 5 minutos")
 
-    if fuente == "📁 Archivo local":
-        archivo = st.file_uploader("Subí el Excel del sistema", type=["xlsx"])
-        if archivo:
-            df = cargar_datos_local(archivo)
-            st.success(f"✅ {len(df)} registros cargados")
-    else:
-        st.info("Para conectar Google Sheets necesitás configurar las credenciales de servicio.")
-        sheet_id = st.text_input("ID de Google Sheet")
-        creds_json = st.text_area("Service Account JSON (pegá el contenido)", height=120)
-        if sheet_id and creds_json:
-            try:
-                import json
-                df = cargar_desde_gsheets(sheet_id, json.loads(creds_json))
-                st.success(f"✅ {len(df)} registros cargados")
-            except Exception as e:
-                st.error(f"Error: {e}")
+bandas = sorted(df['Banda'].dropna().unique().astype(int))
+banda_sel = st.selectbox("🏷️ Seleccioná la Banda", bandas)
 
-    st.markdown("---")
-    confianza = st.slider("Nivel de confianza", 0.80, 0.99, 0.95, 0.01,
-                          format="%.0f%%", help="Nivel de confianza para la banda (t de Student)")
+df_banda = df[df['Banda'] == banda_sel].copy().sort_values('Semana')
 
-# ── CONTENIDO PRINCIPAL ───────────────────────────────────────────────────────
-st.markdown("# Dashboard Recría")
-st.markdown("Evolución de peso por banda con intervalo de confianza")
+if df_banda.empty:
+    st.warning(f"No hay datos para la Banda {banda_sel}")
+    st.stop()
 
-if df is None:
-    st.info("👈 Cargá los datos desde el panel lateral para comenzar.")
+ultima = df_banda.iloc[-1]
+std_ult = STANDARD.get(int(ultima['Semana']), None)
+indice = ultima['Media (kg)'] / std_ult if std_ult else None
 
-    # Mostrar demo con datos de ejemplo
-    st.markdown("### Vista previa con datos de ejemplo")
-    demo_data = []
-    for semana in [3, 4, 5, 6, 7]:
-        std = STANDARD[semana]
-        for i in range(5):
-            demo_data.append({
-                'Banda': 4, 'Semana de peso': semana,
-                'N° Lechon': i + 1,
-                'Peso': round(std * np.random.uniform(0.85, 1.15), 2)
-            })
-    df = pd.DataFrame(demo_data)
-    st.caption("⚠️ Mostrando datos de ejemplo — cargá tu archivo para ver datos reales")
-
-# Asegurar tipos correctos
-df['Banda'] = pd.to_numeric(df['Banda'], errors='coerce')
-df['Semana de peso'] = pd.to_numeric(df['Semana de peso'], errors='coerce')
-df['Peso'] = pd.to_numeric(df['Peso'], errors='coerce')
-df = df.dropna(subset=['Banda', 'Semana de peso', 'Peso'])
-
-# ── FILTROS ───────────────────────────────────────────────────────────────────
-col1, col2 = st.columns([1, 3])
-with col1:
-    bandas_disponibles = sorted(df['Banda'].unique())
-    banda_sel = st.selectbox("🏷️ Seleccioná la Banda", bandas_disponibles)
-
-df_banda = df[df['Banda'] == banda_sel].copy()
-
-# ── MÉTRICAS RESUMEN ──────────────────────────────────────────────────────────
-semanas_banda = sorted(df_banda['Semana de peso'].unique())
-ultima_semana = semanas_banda[-1] if semanas_banda else None
-
-if ultima_semana:
-    df_ult = df_banda[df_banda['Semana de peso'] == ultima_semana]
-    media_actual = df_ult['Peso'].mean()
-    std_actual = STANDARD.get(ultima_semana, 0)
-    n_lechones = df_ult['N° Lechon'].nunique()
-    indice = media_actual / std_actual if std_actual > 0 else 0
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.markdown(f"""<div class="metric-card">
-            <div class="metric-title">Banda</div>
-            <div class="metric-value">{int(banda_sel)}</div>
-            <div class="metric-sub">{n_lechones} lechones</div>
-        </div>""", unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"""<div class="metric-card">
-            <div class="metric-title">Media actual (sem {int(ultima_semana)})</div>
-            <div class="metric-value">{media_actual:.2f} kg</div>
-            <div class="metric-sub">Estándar: {std_actual} kg</div>
-        </div>""", unsafe_allow_html=True)
-    with c3:
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    st.markdown(f"""<div class="metric-card">
+        <div class="metric-title">Banda</div>
+        <div class="metric-value">{int(banda_sel)}</div>
+        <div class="metric-sub">{int(df_banda['N (lechones)'].iloc[-1])} lechones</div>
+    </div>""", unsafe_allow_html=True)
+with c2:
+    st.markdown(f"""<div class="metric-card">
+        <div class="metric-title">Media última semana (Sem {int(ultima['Semana'])})</div>
+        <div class="metric-value">{ultima['Media (kg)']:.2f} kg</div>
+        <div class="metric-sub">Estándar: {std_ult if std_ult else 'N/D'} kg</div>
+    </div>""", unsafe_allow_html=True)
+with c3:
+    if indice:
         color = "#2E7D32" if 0.95 <= indice <= 1.05 else "#F57F17" if 0.85 <= indice < 0.95 else "#C62828"
         st.markdown(f"""<div class="metric-card" style="border-left-color:{color}">
-            <div class="metric-title">Índice de rendimiento</div>
+            <div class="metric-title">Índice Media/Estándar</div>
             <div class="metric-value" style="color:{color}">{indice:.2f}</div>
-            <div class="metric-sub">Media / Estándar</div>
+            <div class="metric-sub">1.00 = exactamente en estándar</div>
         </div>""", unsafe_allow_html=True)
-    with c4:
-        desv = ((media_actual - std_actual) / std_actual * 100) if std_actual > 0 else 0
-        color2 = "#2E7D32" if abs(desv) <= 5 else "#F57F17" if abs(desv) <= 15 else "#C62828"
-        st.markdown(f"""<div class="metric-card" style="border-left-color:{color2}">
-            <div class="metric-title">Desvío del estándar</div>
-            <div class="metric-value" style="color:{color2}">{desv:+.1f}%</div>
-            <div class="metric-sub">Última semana registrada</div>
-        </div>""", unsafe_allow_html=True)
+with c4:
+    estado_ult = str(ultima.get('Estado vs Estándar', ''))
+    color_e = "#2E7D32" if "Dentro" in estado_ult else "#F57F17" if "debajo" in estado_ult.lower() else "#1565C0"
+    st.markdown(f"""<div class="metric-card" style="border-left-color:{color_e}">
+        <div class="metric-title">Estado última semana</div>
+        <div class="metric-value" style="font-size:18px;color:{color_e}">{estado_ult}</div>
+    </div>""", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── GRÁFICO PRINCIPAL ─────────────────────────────────────────────────────────
+semanas_banda = df_banda['Semana'].tolist()
+medias = df_banda['Media (kg)'].tolist()
+ic_infs = df_banda['IC 95% inf'].tolist()
+ic_sups = df_banda['IC 95% sup'].tolist()
+
 fig = go.Figure()
 
-# Línea estándar
-semanas_std = [s for s in range(3, 17) if s in STANDARD]
-std_vals = [STANDARD[s] for s in semanas_std]
 fig.add_trace(go.Scatter(
-    x=semanas_std, y=std_vals,
-    mode='lines+markers',
-    name='Estándar',
-    line=dict(color='#E53935', width=2, dash='dash'),
-    marker=dict(size=6),
+    x=semanas_banda + semanas_banda[::-1],
+    y=ic_sups + ic_infs[::-1],
+    fill='toself',
+    fillcolor='rgba(33,150,243,0.15)',
+    line=dict(color='rgba(255,255,255,0)'),
+    name='IC 95%',
+    hoverinfo='skip',
 ))
 
-# Por cada lechón — línea individual + banda de confianza
-lechones = sorted(df_banda['N° Lechon'].unique())
-colores_lechones = ['#1565C0', '#2E7D32', '#6A1B9A', '#E65100', '#00695C']
+semanas_std = [s for s in range(3, 12) if s in STANDARD]
+fig.add_trace(go.Scatter(
+    x=semanas_std, y=[STANDARD[s] for s in semanas_std],
+    mode='lines+markers', name='Estándar',
+    line=dict(color='#EF5350', width=2, dash='dash'),
+    marker=dict(size=7),
+))
 
-for i, lechon in enumerate(lechones):
-    df_l = df_banda[df_banda['N° Lechon'] == lechon].sort_values('Semana de peso')
-    color = colores_lechones[i % len(colores_lechones)]
-    fig.add_trace(go.Scatter(
-        x=df_l['Semana de peso'], y=df_l['Peso'],
-        mode='lines+markers',
-        name=f'Lechón {int(lechon)}',
-        line=dict(color=color, width=1.5),
-        marker=dict(size=5),
-        opacity=0.7,
-    ))
-
-# Banda de confianza (media ± IC) por semana
-medias, ic_infs, ic_sups, semanas_plot = [], [], [], []
-for semana in semanas_banda:
-    datos_sem = df_banda[df_banda['Semana de peso'] == semana]['Peso'].dropna().values
-    if len(datos_sem) >= 2:
-        ic_inf, ic_sup = calcular_ic(datos_sem, confianza)
-        medias.append(np.mean(datos_sem))
-        ic_infs.append(ic_inf)
-        ic_sups.append(ic_sup)
-        semanas_plot.append(semana)
-
-if semanas_plot:
-    # Banda de confianza rellena
-    fig.add_trace(go.Scatter(
-        x=semanas_plot + semanas_plot[::-1],
-        y=ic_sups + ic_infs[::-1],
-        fill='toself',
-        fillcolor='rgba(46,125,50,0.12)',
-        line=dict(color='rgba(255,255,255,0)'),
-        name=f'IC {int(confianza*100)}%',
-        showlegend=True,
-    ))
-    # Media real
-    fig.add_trace(go.Scatter(
-        x=semanas_plot, y=medias,
-        mode='lines+markers',
-        name='Media real',
-        line=dict(color='#2E7D32', width=3),
-        marker=dict(size=8, symbol='diamond'),
-    ))
+fig.add_trace(go.Scatter(
+    x=semanas_banda, y=medias,
+    mode='lines+markers', name='Media real',
+    line=dict(color='#42A5F5', width=3),
+    marker=dict(size=9),
+    text=[f"Sem {int(s)}<br>Media: {m:.2f} kg<br>IC: [{il:.2f}, {su:.2f}]"
+          for s, m, il, su in zip(semanas_banda, medias, ic_infs, ic_sups)],
+    hovertemplate='%{text}<extra></extra>',
+))
 
 fig.update_layout(
-    title=dict(text=f'Evolución de peso — Banda {int(banda_sel)}', font=dict(size=18)),
-    xaxis=dict(title='Semana de vida', tickmode='linear', dtick=1, gridcolor='#F0F0F0'),
-    yaxis=dict(title='Peso (kg)', gridcolor='#F0F0F0'),
-    plot_bgcolor='white',
-    paper_bgcolor='white',
-    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-    height=450,
-    margin=dict(l=40, r=20, t=60, b=40),
+    title=dict(text=f'Evolución de peso — Banda {int(banda_sel)}', font=dict(size=18, color='white')),
+    xaxis=dict(title='Semana de vida', tickmode='linear', dtick=1,
+               gridcolor='#333333', color='white', titlefont=dict(color='white')),
+    yaxis=dict(title='Peso (kg)', gridcolor='#333333', color='white', titlefont=dict(color='white')),
+    plot_bgcolor='#1A1A1A', paper_bgcolor='#1A1A1A',
+    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
+                font=dict(color='white')),
+    height=450, margin=dict(l=40, r=20, t=60, b=40),
 )
 st.plotly_chart(fig, use_container_width=True)
 
-# ── TABLA DETALLE ─────────────────────────────────────────────────────────────
-st.markdown("### 📋 Estado por lechón — última semana registrada")
+st.markdown("### 📋 Tabla estadística por semana")
+cols_mostrar = ['Semana', 'N (lechones)', 'Media (kg)', 'Desvío S',
+                'Error Est. (SE)', 'IC 95% inf', 'IC 95% sup', 'Estado vs Estándar']
+cols_disp = [c for c in cols_mostrar if c in df_banda.columns]
+st.dataframe(df_banda[cols_disp].reset_index(drop=True), use_container_width=True, hide_index=True)
 
-if ultima_semana and len(semanas_plot) > 0:
-    ic_ult_idx = semanas_plot.index(ultima_semana) if ultima_semana in semanas_plot else -1
-    ic_inf_ult = ic_infs[ic_ult_idx] if ic_ult_idx >= 0 else None
-    ic_sup_ult = ic_sups[ic_ult_idx] if ic_ult_idx >= 0 else None
-    std_ult = STANDARD.get(ultima_semana, 0)
+if 'Estado vs Estándar' in df_banda.columns:
+    estados = df_banda['Estado vs Estándar'].tolist()
+    dentro = sum(1 for e in estados if 'Dentro' in str(e))
+    encima = sum(1 for e in estados if 'encima' in str(e).lower())
+    debajo = sum(1 for e in estados if 'debajo' in str(e).lower())
+    total = len(estados)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("✅ Dentro de banda", f"{dentro}/{total}")
+    c2.metric("⬆️ Por encima", f"{encima}/{total}")
+    c3.metric("⚠️ Por debajo", f"{debajo}/{total}")
 
-    filas = []
-    for lechon in lechones:
-        df_l_ult = df_banda[(df_banda['N° Lechon'] == lechon) & (df_banda['Semana de peso'] == ultima_semana)]
-        if not df_l_ult.empty:
-            peso = df_l_ult['Peso'].values[0]
-            estado = estado_lechon(peso, ultima_semana, ic_inf_ult, ic_sup_ult, std_ult)
-            dif = peso - std_ult
-            filas.append({
-                'Lechón': int(lechon),
-                'Peso (kg)': peso,
-                'Estándar (kg)': std_ult,
-                'Diferencia': f'{dif:+.2f} kg',
-                f'IC {int(confianza*100)}% inferior': f'{ic_inf_ult:.2f}' if ic_inf_ult else '-',
-                f'IC {int(confianza*100)}% superior': f'{ic_sup_ult:.2f}' if ic_sup_ult else '-',
-                'Estado': estado,
-            })
-
-    if filas:
-        df_tabla = pd.DataFrame(filas)
-        st.dataframe(
-            df_tabla,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                'Estado': st.column_config.TextColumn('Estado', width='medium'),
-                'Peso (kg)': st.column_config.NumberColumn('Peso (kg)', format='%.2f'),
-            }
-        )
-
-        # Resumen
-        total = len(filas)
-        dentro = sum(1 for f in filas if '✅' in f['Estado'])
-        fuera_abajo = sum(1 for f in filas if 'Por debajo' in f['Estado'] or 'Muy' in f['Estado'])
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("✅ Dentro de banda", f"{dentro}/{total}", f"{dentro/total*100:.0f}%")
-        c2.metric("⚠️ Fuera de banda", f"{total-dentro}/{total}")
-        c3.metric("🔴 Por debajo del estándar", f"{fuera_abajo}/{total}")
-
-# ── EVOLUCIÓN COMPLETA POR LECHÓN ─────────────────────────────────────────────
-with st.expander("📊 Ver evolución completa por lechón"):
-    semana_sel = st.select_slider("Semana", options=semanas_banda, value=semanas_banda[-1] if semanas_banda else 3)
-    df_sem = df_banda[df_banda['Semana de peso'] == semana_sel].copy()
-
-    if not df_sem.empty:
-        datos_sem = df_sem['Peso'].dropna().values
-        ic_inf_s, ic_sup_s = calcular_ic(datos_sem, confianza)
-        std_s = STANDARD.get(semana_sel, 0)
-
-        df_sem['Estado'] = df_sem['Peso'].apply(
-            lambda p: estado_lechon(p, semana_sel, ic_inf_s, ic_sup_s, std_s)
-        )
-        df_sem['vs Estándar'] = (df_sem['Peso'] - std_s).round(2)
-        st.dataframe(
-            df_sem[['N° Lechon', 'Peso', 'vs Estándar', 'Estado']].sort_values('N° Lechon'),
-            use_container_width=True, hide_index=True
-        )
-
-# ── FOOTER ────────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.caption("🐷 Agricultex — Sistema de Gestión de Granjas | Intervalo de confianza calculado con t de Student")
+st.caption("🐷 Agricultex — IC con t de Student (gl=n-1, α=0.05) · Datos sincronizados automáticamente")
