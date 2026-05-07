@@ -58,7 +58,7 @@ STANDARD = {3:6.3, 4:8.3, 5:10.6, 6:13.3, 7:16.6, 8:20.6, 9:25.1, 10:30.0, 11:35
 def cargar_datos():
     try:
         df_raw = pd.read_csv(SHEET_URL, header=None)
-        st.write(df_raw.head(10))  # debug temporal
+        
         header_row = None
         for i, row in df_raw.iterrows():
             if str(row[0]).strip() == 'Lote':
