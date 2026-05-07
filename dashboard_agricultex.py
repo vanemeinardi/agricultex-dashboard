@@ -60,7 +60,7 @@ def cargar_datos():
         df_raw = pd.read_csv(SHEET_URL, header=None)
         header_row = None
         for i, row in df_raw.iterrows():
-            if str(row[0]).strip() == 'Banda':
+            if str(row[0]).strip() == 'Lote':
                 header_row = i
                 break
         if header_row is None:
@@ -68,12 +68,12 @@ def cargar_datos():
         df = df_raw.iloc[header_row+1:].copy()
         df.columns = df_raw.iloc[header_row].values
         df = df.reset_index(drop=True)
-        df = df[df['Banda'].notna() & (df['Banda'] != '')]
-        for col in ['Banda', 'Semana', 'N (lechones)', 'Media (kg)', 'Desvío S',
+        df = df[df['Lote'].notna() & (df['Lote'] != '')]
+        for col in ['Lote', 'Semana', 'N (lechones)', 'Media (kg)', 'Desvío S',
                     'Error Est. (SE)', 'IC 95% inf', 'IC 95% sup']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-        df = df.dropna(subset=['Banda', 'Semana', 'Media (kg)'])
+        df = df.dropna(subset=['Lote', 'Semana', 'Media (kg)'])
         return df, None
     except Exception as e:
         return None, str(e)
@@ -104,16 +104,16 @@ if df is None or df.empty:
 
 st.caption(f"✅ {len(df)} registros · Sincronizado automáticamente")
 
-bandas = sorted(df['Banda'].dropna().unique().astype(int))
-banda_sel = st.selectbox("🏷️ Banda", bandas)
+lotes = sorted(df['Lote'].dropna().unique().astype(int))
+lote_sel = st.selectbox("🏷️ Lote", lotes)
 
-df_banda = df[df['Banda'] == banda_sel].copy().sort_values('Semana')
+df_lote = df[df['Lote'] == lote_sel].copy().sort_values('Semana')
 
-if df_banda.empty:
-    st.warning(f"No hay datos para la Banda {banda_sel}")
+if df_lote.empty:
+    st.warning(f"No hay datos para la Lote {lote_sel}")
     st.stop()
 
-ultima = df_banda.iloc[-1]
+ultima = df_lote.iloc[-1]
 std_ult = STANDARD.get(int(ultima['Semana']), None)
 indice = ultima['Media (kg)'] / std_ult if std_ult else None
 
@@ -121,9 +121,9 @@ indice = ultima['Media (kg)'] / std_ult if std_ult else None
 c1, c2 = st.columns(2)
 with c1:
     st.markdown(f"""<div class="metric-card">
-        <div class="metric-title">Banda</div>
-        <div class="metric-value">{int(banda_sel)}</div>
-        <div class="metric-sub">{int(df_banda['N (lechones)'].iloc[-1])} lechones</div>
+        <div class="metric-title">Lote</div>
+        <div class="metric-value">{int(lote_sel)}</div>
+        <div class="metric-sub">{int(df_lote['N (lechones)'].iloc[-1])} lechones</div>
     </div>""", unsafe_allow_html=True)
 with c2:
     st.markdown(f"""<div class="metric-card">
@@ -151,15 +151,15 @@ with c4:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-semanas_banda = df_banda['Semana'].tolist()
-medias = df_banda['Media (kg)'].tolist()
-ic_infs = df_banda['IC 95% inf'].tolist()
-ic_sups = df_banda['IC 95% sup'].tolist()
+semanas_lote = df_lote['Semana'].tolist()
+medias = df_lote['Media (kg)'].tolist()
+ic_infs = df_lote['IC 95% inf'].tolist()
+ic_sups = df_lote['IC 95% sup'].tolist()
 
 fig = go.Figure()
 
 fig.add_trace(go.Scatter(
-    x=semanas_banda + semanas_banda[::-1],
+    x=semanas_lote + semanas_lote[::-1],
     y=ic_sups + ic_infs[::-1],
     fill='toself', fillcolor='rgba(33,150,243,0.15)',
     line=dict(color='rgba(255,255,255,0)'), name='IC 95%', hoverinfo='skip',
@@ -173,15 +173,15 @@ fig.add_trace(go.Scatter(
 ))
 
 fig.add_trace(go.Scatter(
-    x=semanas_banda, y=medias, mode='lines+markers', name='Media real',
+    x=semanas_lote, y=medias, mode='lines+markers', name='Media real',
     line=dict(color='#42A5F5', width=3), marker=dict(size=8),
     text=[f"Sem {int(s)}<br>Media: {m:.2f} kg<br>IC: [{il:.2f}, {su:.2f}]"
-          for s, m, il, su in zip(semanas_banda, medias, ic_infs, ic_sups)],
+          for s, m, il, su in zip(semanas_lote, medias, ic_infs, ic_sups)],
     hovertemplate='%{text}<extra></extra>',
 ))
 
 fig.update_layout(
-    title=dict(text=f'Banda {int(banda_sel)}', font=dict(size=16, color='white')),
+    title=dict(text=f'Lote {int(lote_sel)}', font=dict(size=16, color='white')),
     xaxis=dict(title=dict(text='Semana', font=dict(color='white')),
                tickmode='linear', dtick=1, gridcolor='#333333', color='white'),
     yaxis=dict(title=dict(text='Peso (kg)', font=dict(color='white')),
@@ -197,14 +197,14 @@ st.markdown("### 📋 Tabla por semana")
 
 cols = ['Semana', 'N (lechones)', 'Media (kg)', 'Desvío S',
         'Error Est. (SE)', 'IC 95% inf', 'IC 95% sup', 'Estado vs Estándar']
-cols_disp = [c for c in cols if c in df_banda.columns]
+cols_disp = [c for c in cols if c in df_lote.columns]
 
 html = '<div style="overflow-x:auto"><table class="tabla-dark"><thead><tr>'
 for c in cols_disp:
     html += f'<th>{c}</th>'
 html += '</tr></thead><tbody>'
 
-for _, row in df_banda[cols_disp].iterrows():
+for _, row in df_lote[cols_disp].iterrows():
     html += '<tr>'
     for c in cols_disp:
         val = row[c]
@@ -221,8 +221,8 @@ st.markdown(html, unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-if 'Estado vs Estándar' in df_banda.columns:
-    estados = df_banda['Estado vs Estándar'].tolist()
+if 'Estado vs Estándar' in df_lote.columns:
+    estados = df_lote['Estado vs Estándar'].tolist()
     dentro = sum(1 for e in estados if 'Dentro' in str(e))
     encima = sum(1 for e in estados if 'encima' in str(e).lower())
     debajo = sum(1 for e in estados if 'debajo' in str(e).lower())
