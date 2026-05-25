@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -222,7 +223,7 @@ st.markdown(html, unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-if 'Estado vs Estandar' in df_lote.columns:
+if 'Estado vs Estándar' in df_lote.columns:
     estados = df_lote['Estado vs Estándar'].tolist()
     dentro = sum(1 for e in estados if 'Dentro' in str(e))
     encima = sum(1 for e in estados if 'encima' in str(e).lower())
