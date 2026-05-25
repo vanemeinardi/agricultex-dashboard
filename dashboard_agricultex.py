@@ -1,237 +1,90 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
+const ESTANDARES = {
+  3: 6.3, 4: 8.3, 5: 10.6, 6: 13.3, 7: 16.6,
+  8: 20.6, 9: 25.1, 10: 30.0, 11: 35.4
+};
 
-st.set_page_config(
-    page_title="Agricultex — Dashboard Recría",
-    page_icon="🐷",
-    layout="centered"
-)
+const ID_SHEET_DESTINO = '1MPwyjUpHgwbuqqGwzGi1CgCBoEziNdqe5yKEj5PJKtM';
 
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
-    html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
-    .stApp { background-color: #1A1A1A; color: white; }
-    .metric-card {
-        background: #2A2A2A; border-radius: 12px; padding: 16px 20px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.4); border-left: 4px solid #2E7D32;
-        margin-bottom: 8px;
+function sincronizarDashboard() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetRecria = ss.getSheetByName('Recria');
+  var datos = sheetRecria.getDataRange().getValues();
+
+  var COL_LOTE = 2;
+  var COL_SEMANA = 3;
+  var COL_LECHON = 4;
+  var COL_PESO = 5;
+
+  var grupos = {};
+  for (var i = 1; i < datos.length; i++) {
+    var fila = datos[i];
+    var lote = fila[COL_LOTE];
+    var semana = fila[COL_SEMANA];
+    var lechon = fila[COL_LECHON];
+    var peso = fila[COL_PESO];
+    if (lote === '' || semana === '' || peso === '' || peso === null) continue;
+    var key = lote + '_' + semana;
+    if (!grupos[key]) grupos[key] = { lote: lote, semana: semana, lechones: {} };
+    grupos[key].lechones[lechon] = Number(peso);
+  }
+
+  var filasDash = [];
+  var keys = Object.keys(grupos).sort(function(a, b) {
+    var pa = a.split('_'); var pb = b.split('_');
+    return (Number(pa[0]) - Number(pb[0])) || (Number(pa[1]) - Number(pb[1]));
+  });
+
+  keys.forEach(function(key) {
+    var g = grupos[key];
+    var pesos = Object.values(g.lechones);
+    var n = pesos.length;
+    var media = pesos.reduce(function(a, b) { return a + b; }, 0) / n;
+    var desvio = n > 1
+      ? Math.sqrt(pesos.reduce(function(s, x) { return s + Math.pow(x - media, 2); }, 0) / (n - 1))
+      : '';
+    var se = n > 1 ? desvio / Math.sqrt(n) : 0;
+    var tCrit = n >= 30 ? 1.96 : n >= 10 ? 2.228 : n >= 5 ? 2.776 : n >= 4 ? 3.182 : n >= 3 ? 4.303 : n >= 2 ? 12.706 : 0;
+    var icInf = n > 1 ? media - tCrit * se : media;
+    var icSup = n > 1 ? media + tCrit * se : media;
+    var std = ESTANDARES[g.semana];
+    var estado = '';
+    if (std) {
+      if (icInf > std) estado = '⬆️ Por encima';
+      else if (icSup < std) estado = '⚠️ Por debajo';
+      else estado = '✅ Dentro';
     }
-    .metric-title { font-size: 12px; color: #AAAAAA; text-transform: uppercase; letter-spacing: 0.05em; }
-    .metric-value { font-size: 26px; font-weight: 700; color: #FFFFFF; }
-    .metric-sub { font-size: 12px; color: #888888; margin-top: 2px; }
-    h1, h2, h3 { color: #FFFFFF !important; }
-    p, li, label { color: #CCCCCC !important; }
-    div[data-testid="stSelectbox"] label { color: #CCCCCC !important; }
-    .tabla-dark { width: 100%; border-collapse: collapse; background-color: transparent; }
-    .tabla-dark th {
-        background-color: #1F6B3A; color: white; padding: 10px 14px;
-        text-align: left; font-size: 13px; font-weight: 600; border-bottom: 2px solid #2E7D32;
-    }
-    .tabla-dark td {
-        padding: 9px 14px; font-size: 13px; color: #CCCCCC;
-        border-bottom: 1px solid #2D2D2D;
-    }
-    .tabla-dark tr:nth-child(even) td { background-color: #222222; }
-    .tabla-dark tr:hover td { background-color: #2E2E2E; }
-    .badge-dentro { background: #1B5E20; color: #A5D6A7; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-    .badge-encima { background: #0D47A1; color: #90CAF9; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-    .badge-debajo { background: #E65100; color: #FFE0B2; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-    @media (max-width: 768px) {
-        .metric-card { padding: 10px 12px; margin-bottom: 6px; }
-        .metric-value { font-size: 20px; }
-        .metric-title { font-size: 10px; }
-        .metric-sub { font-size: 10px; }
-        .tabla-dark th, .tabla-dark td { padding: 6px 8px; font-size: 11px; }
-        .badge-dentro, .badge-encima, .badge-debajo { font-size: 10px; padding: 2px 6px; }
-    }
-</style>
-""", unsafe_allow_html=True)
+    filasDash.push([
+      g.lote, g.semana, n,
+      Math.round(media * 1000) / 1000,
+      desvio !== '' ? Math.round(desvio * 1000000) / 1000000 : '',
+      Math.round(se * 1000000) / 1000000,
+      n > 1 ? Math.round(icInf * 100000) / 100000 : media,
+      n > 1 ? Math.round(icSup * 100000) / 100000 : media,
+      estado
+    ]);
+  });
 
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSgxJiumgT9__PpntQZvNU-mEa7soEDOy0oQ_4vJZOjfKcBESdGlevazx5XtutLLEhVaJj74BLoRILT/pub?gid=0&single=true&output=csv"
+  var encabezadoInfo = [
+    ['AGRICULTEX - Dashboard Recria', '', '', '', '', '', '', '', ''],
+    ['Estadisticas agregadas por banda y semana. Sin datos individuales.', '', '', '', '', '', '', '', ''],
+    ['VALORES ESTANDAR DE REFERENCIA (kg)', '', '', '', '', '', '', '', ''],
+    ['Sem 3', 'Sem 4', 'Sem 5', 'Sem 6', 'Sem 7', 'Sem 8', 'Sem 9', 'Sem 10', 'Sem 11'],
+    [6.3, 8.3, 10.6, 13.3, 16.6, 20.6, 25.1, 30.0, 35.4],
+    ['ESTADISTICAS AGREGADAS POR BANDA Y SEMANA', '', '', '', '', '', '', '', ''],
+    ['Lote', 'Semana', 'N (lechones)', 'Media (kg)', 'Desvío S', 'Error Est. (SE)', 'IC 95% inf', 'IC 95% sup', 'Estado vs Estándar']
+  ];
 
-STANDARD = {3:6.3, 4:8.3, 5:10.6, 6:13.3, 7:16.6, 8:20.6, 9:25.1, 10:30.0, 11:35.4}
+  var todasFilas = encabezadoInfo.concat(filasDash);
+  todasFilas.push(['IC calculado con t de Student (gl=n-1, a=0.05).', '', '', '', '', '', '', '', '']);
 
-@st.cache_data(ttl=300)
-def cargar_datos():
-    try:
-        df_raw = pd.read_csv(SHEET_URL, header=None)
-        
-        header_row = None
-        for i, row in df_raw.iterrows():
-            if str(row[0]).strip() == 'Lote':
-                header_row = i
-                break
-        if header_row is None:
-            return None, "No se encontró la tabla"
-        df = df_raw.iloc[header_row+1:].copy()
-        df.columns = df_raw.iloc[header_row].values
-        df = df.reset_index(drop=True)
-        df = df[df['Lote'].notna() & (df['Lote'] != '')]
-        for col in ['Lote', 'Semana', 'N (lechones)', 'Media (kg)', 'Desvío S',
-                    'Error Est. (SE)', 'IC 95% inf', 'IC 95% sup']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        df = df.dropna(subset=['Lote', 'Semana', 'Media (kg)'])
-        return df, None
-    except Exception as e:
-        return None, str(e)
+  var sheetDestino = SpreadsheetApp.openById(ID_SHEET_DESTINO).getSheetByName('Hoja 1');
+  sheetDestino.clearContents();
+  sheetDestino.getRange(1, 1, todasFilas.length, 9).setValues(todasFilas);
 
-def badge_estado(estado):
-    e = str(estado)
-    if 'Dentro' in e:
-        return f'<span class="badge-dentro">✅ Dentro</span>'
-    elif 'encima' in e.lower():
-        return f'<span class="badge-encima">⬆️ Por encima</span>'
-    elif 'debajo' in e.lower():
-        return f'<span class="badge-debajo">⚠️ Por debajo</span>'
-    return e
+  Logger.log('Dashboard sincronizado: ' + filasDash.length + ' filas.');
+}
 
-st.markdown("# 🐷 Agricultex")
-st.markdown("Dashboard Recría — IC 95%")
-st.markdown("---")
-
-df, error = cargar_datos()
-
-if error:
-    st.error(f"Error cargando datos: {error}")
-    st.stop()
-
-if df is None or df.empty:
-    st.warning("No hay datos disponibles.")
-    st.stop()
-
-st.caption(f"✅ {len(df)} registros · Sincronizado automáticamente")
-
-lotes = sorted(df['Lote'].dropna().unique().astype(int))
-lote_sel = st.selectbox("🏷️ Lote", lotes)
-
-df_lote = df[df['Lote'] == lote_sel].copy().sort_values('Semana')
-
-if df_lote.empty:
-    st.warning(f"No hay datos para la Lote {lote_sel}")
-    st.stop()
-
-ultima = df_lote.iloc[-1]
-std_ult = STANDARD.get(int(ultima['Semana']), None)
-indice = ultima['Media (kg)'] / std_ult if std_ult else None
-
-# Métricas — 2 columnas en celular
-c1, c2 = st.columns(2)
-with c1:
-    st.markdown(f"""<div class="metric-card">
-        <div class="metric-title">Lote</div>
-        <div class="metric-value">{int(lote_sel)}</div>
-        <div class="metric-sub">{int(df_lote['N (lechones)'].iloc[-1])} lechones</div>
-    </div>""", unsafe_allow_html=True)
-with c2:
-    st.markdown(f"""<div class="metric-card">
-        <div class="metric-title">Media sem {int(ultima['Semana'])}</div>
-        <div class="metric-value">{ultima['Media (kg)']:.2f} kg</div>
-        <div class="metric-sub">Estándar: {std_ult if std_ult else 'N/D'} kg</div>
-    </div>""", unsafe_allow_html=True)
-
-c3, c4 = st.columns(2)
-with c3:
-    if indice:
-        color = "#2E7D32" if 0.95 <= indice <= 1.05 else "#F57F17" if 0.85 <= indice < 0.95 else "#C62828"
-        st.markdown(f"""<div class="metric-card" style="border-left-color:{color}">
-            <div class="metric-title">Índice</div>
-            <div class="metric-value" style="color:{color}">{indice:.2f}</div>
-            <div class="metric-sub">Media / Estándar</div>
-        </div>""", unsafe_allow_html=True)
-with c4:
-    estado_ult = str(ultima.get('Estado vs Estándar', ''))
-    color_e = "#2E7D32" if "Dentro" in estado_ult else "#F57F17" if "debajo" in estado_ult.lower() else "#1565C0"
-    st.markdown(f"""<div class="metric-card" style="border-left-color:{color_e}">
-        <div class="metric-title">Estado</div>
-        <div class="metric-value" style="font-size:16px;color:{color_e}">{estado_ult}</div>
-    </div>""", unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-semanas_lote = df_lote['Semana'].tolist()
-medias = df_lote['Media (kg)'].tolist()
-ic_infs = df_lote['IC 95% inf'].tolist()
-ic_sups = df_lote['IC 95% sup'].tolist()
-
-fig = go.Figure()
-
-fig.add_trace(go.Scatter(
-    x=semanas_lote + semanas_lote[::-1],
-    y=ic_sups + ic_infs[::-1],
-    fill='toself', fillcolor='rgba(33,150,243,0.15)',
-    line=dict(color='rgba(255,255,255,0)'), name='IC 95%', hoverinfo='skip',
-))
-
-semanas_std = [s for s in range(3, 12) if s in STANDARD]
-fig.add_trace(go.Scatter(
-    x=semanas_std, y=[STANDARD[s] for s in semanas_std],
-    mode='lines+markers', name='Estándar',
-    line=dict(color='#EF5350', width=2, dash='dash'), marker=dict(size=6),
-))
-
-fig.add_trace(go.Scatter(
-    x=semanas_lote, y=medias, mode='lines+markers', name='Media real',
-    line=dict(color='#42A5F5', width=3), marker=dict(size=8),
-    text=[f"Sem {int(s)}<br>Media: {m:.2f} kg<br>IC: [{il:.2f}, {su:.2f}]"
-          for s, m, il, su in zip(semanas_lote, medias, ic_infs, ic_sups)],
-    hovertemplate='%{text}<extra></extra>',
-))
-
-fig.update_layout(
-    title=dict(text=f'Lote {int(lote_sel)}', font=dict(size=16, color='white')),
-    xaxis=dict(title=dict(text='Semana', font=dict(color='white')),
-               tickmode='linear', dtick=1, gridcolor='#333333', color='white'),
-    yaxis=dict(title=dict(text='Peso (kg)', font=dict(color='white')),
-               gridcolor='#333333', color='white'),
-    plot_bgcolor='#1A1A1A', paper_bgcolor='#1A1A1A',
-    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
-                font=dict(color='white', size=11)),
-    height=380, margin=dict(l=40, r=10, t=50, b=40),
-)
-st.plotly_chart(fig, use_container_width=True)
-
-st.markdown("### 📋 Tabla por semana")
-
-cols = ['Semana', 'N (lechones)', 'Media (kg)', 'Desvío S',
-        'Error Est. (SE)', 'IC 95% inf', 'IC 95% sup', 'Estado vs Estándar']
-cols_disp = [c for c in cols if c in df_lote.columns]
-
-html = '<div style="overflow-x:auto"><table class="tabla-dark"><thead><tr>'
-for c in cols_disp:
-    html += f'<th>{c}</th>'
-html += '</tr></thead><tbody>'
-
-for _, row in df_lote[cols_disp].iterrows():
-    html += '<tr>'
-    for c in cols_disp:
-        val = row[c]
-        if c == 'Estado vs Estándar':
-            html += f'<td>{badge_estado(val)}</td>'
-        elif c in ['Semana', 'N (lechones)']:
-            html += f'<td>{int(val) if pd.notna(val) else ""}</td>'
-        else:
-            html += f'<td>{val:.3f}</td>' if pd.notna(val) else '<td></td>'
-    html += '</tr>'
-html += '</tbody></table></div>'
-
-st.markdown(html, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-if 'Estado vs Estándar' in df_lote.columns:
-    estados = df_lote['Estado vs Estándar'].tolist()
-    dentro = sum(1 for e in estados if 'Dentro' in str(e))
-    encima = sum(1 for e in estados if 'encima' in str(e).lower())
-    debajo = sum(1 for e in estados if 'debajo' in str(e).lower())
-    total = len(estados)
-    c1, c2, c3 = st.columns(3)
-    c1.metric("✅ Dentro", f"{dentro}/{total}")
-    c2.metric("⬆️ Encima", f"{encima}/{total}")
-    c3.metric("⚠️ Debajo", f"{debajo}/{total}")
-
-st.markdown("---")
-st.caption("🐷 Agricultex — IC t de Student (gl=n-1, α=0.05)")
+function doGet() {
+  sincronizarDashboard();
+  return ContentService.createTextOutput('OK');
+}
